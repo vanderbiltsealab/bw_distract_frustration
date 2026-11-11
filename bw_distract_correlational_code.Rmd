@@ -1,0 +1,220 @@
+---
+title: "Being-with/Distraction - Experimental Code"
+date: "2026-06-03"
+---
+#Environment 
+
+```{r}
+
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(visreg)
+library(tidyverse)
+library(effectsize)
+library(wesanderson)
+library(patchwork)
+library(car)
+library(effectsize)
+
+data <- read_csv("bw_distract_correlational_data.csv")
+
+#palette
+zissou_full <- wes_palette("Zissou1", n = 5, type = "discrete")
+col_palette <- zissou_full[c(2, 3)]
+
+```
+
+#check outliers 
+
+```{r}
+
+#detect 
+check_outliers(
+  data$ibq_reg,
+  method = "zscore",
+  threshold = 3
+) #none
+
+check_outliers(
+  data$cbq_effcon,
+  method = "zscore",
+  threshold = 3
+) #none
+
+check_outliers(
+  data$bewith_anger_all_36,
+  method = "zscore",
+  threshold = 3
+) #one (case 17)
+
+check_outliers(
+  data$distract_anger_all_36,
+  method = "zscore",
+  threshold = 3
+) #none
+
+
+#winsorize one value for bewith_anger
+x <- data$bewith_anger_all_36
+
+m <- mean(x, na.rm = TRUE)
+s <- sd(x, na.rm = TRUE)
+
+lower <- m - 3*s
+upper <- m + 3*s
+
+#winsorize outliers 
+data$bewith_anger_all_36_win <- ifelse(
+  is.na(x), NA,
+  ifelse(x < lower, lower,
+         ifelse(x > upper, upper, x))
+)
+
+#check N and descriptives
+sum(x < lower | x > upper, na.rm = TRUE) #
+
+summary(data$bewith_anger_all_36)
+summary(data$bewith_anger_all_36_win) #confirmed only one value changed (case 17) 
+
+```
+
+#associations between being-with/distract in response to justified and unjustified anger at 36 months with CBCL self-regulation at 36 months, controlling for IBQ self-regulation at 6 months 
+
+```{r}
+
+reg_36m <- lm(cbq_effcon ~ bewith_anger_all_36_win + distract_anger_all_36 + ibq_reg, data = data)
+summary(reg_36m)
+confint(reg_36m, level = 0.95)
+standardize_parameters(reg_36m)
+
+#change cov to 18mo EC
+reg_36m_18cv <- lm(cbq_effcon ~ bewith_anger_all_36_win + distract_anger_all_36 + ecbq_reg, data = data)
+summary(reg_36m_18cv)
+standardize_parameters(reg_36m_18cv)
+
+#change outcome to NA
+neg_36m <- lm(cbq_negaff ~ bewith_anger_all_36_win + distract_anger_all_36 + ibq_neg, data = data)
+summary(neg_36m)
+standardize_parameters(neg_36m)
+
+
+```
+
+#plot main findings
+
+```{r}
+
+#being-with
+vis_be <- visreg(
+  reg_36m,
+  "bewith_anger_all_36_win",
+  gg = FALSE,
+  partial = TRUE
+)
+
+#extract fitted line + CI
+fit_be <- vis_be$fit
+
+#extract partial residuals
+res_be <- vis_be$res
+
+bw <- ggplot() +
+  geom_point(data = res_be,
+    aes(x = bewith_anger_all_36_win, y = visregRes),
+    shape = 21, color = "black", fill = NA, size = 2, stroke = 0.80) +
+  geom_ribbon(data = fit_be,
+    aes(x = bewith_anger_all_36_win, ymin = visregLwr, ymax = visregUpr),
+    fill = "#AA3377", alpha = 0.1) +
+  geom_line(data = fit_be,
+    aes(x = bewith_anger_all_36_win, y = visregFit),
+    color = "#AA3377", linewidth = 1) +
+  labs(
+    x = "Being-with",
+    y = "Child effortful control") +
+  coord_cartesian(
+    xlim = c(2.70, 6),
+    ylim = c(3.25, 6)) +
+  scale_x_continuous(
+    breaks = seq(3, 6, by = 1)) +
+  scale_y_continuous(
+    breaks = seq(3, 6, by = 1)) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.title = element_text(face = "bold"))
+
+
+#distract
+vis_dist <- visreg(
+  reg_36m,
+  "distract_anger_all_36",
+  gg = FALSE,
+  partial = TRUE
+)
+
+#extract fitted line + CI
+fit_dist <- vis_dist$fit
+
+#extract partial residuals
+res_dist <- vis_dist$res
+
+dis <- ggplot() +
+  geom_point(data = res_dist,
+    aes(x = distract_anger_all_36, y = visregRes),
+    shape = 21, color = "black", fill = NA, size = 2, stroke = 0.80) +
+  geom_ribbon(
+    data = fit_dist,
+    aes(x = distract_anger_all_36, ymin = visregLwr, ymax = visregUpr),
+    fill = "#44AA99", alpha = 0.1) +
+  geom_line(
+    data = fit_dist,
+    aes(x = distract_anger_all_36, y = visregFit),
+    color = "#44AA99", linewidth = 1) +
+  labs(
+    x = "Distraction",
+    y = NULL) + 
+  coord_cartesian(
+    xlim = c(2.70, 6),
+    ylim = c(3.25, 6)) +
+  scale_x_continuous(
+    breaks = seq(3, 6, by = 1)) +
+  scale_y_continuous(
+    breaks = seq(3, 6, by = 1)) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.title = element_text(face = "bold"))
+
+#add statistics
+bw <- bw + annotate("text", x = Inf, y = -Inf,
+    label = "\u03B2 = 0.22, 95% CI [0.02, 0.41]",
+    hjust = 1.05, vjust = -1, size = 4)
+
+dis <- dis + annotate("text", x = Inf, y = -Inf,
+    label = "\u03B2 = 0.07, 95% CI [-0.13, 0.26]",
+    hjust = 1.05, vjust = -1, size = 4)
+
+#combine
+combined_plot <- bw + dis
+combined_plot <- combined_plot + 
+  plot_annotation(caption = "Self-reported strategy use in response to anger") &
+  theme(
+    plot.caption = element_text(hjust = 0.5, size = 16)
+  ) &
+  theme(
+    plot.caption = element_text(
+      hjust = 0.5,
+      size = 14,
+      face = "bold"
+    ))
+
+ggsave("bw_dis_cbq_imp.png", combined_plot, width = 8, height = 5, dpi = 300)
+
+```
